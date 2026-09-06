@@ -427,12 +427,12 @@ void ExtruderBadge::UnMarkRelatedItems(const NozzleOption& option)
 {
     bool left_selected = true, right_selected = true;
 
-    if (m_diameter_list[LeftExtruderIdx] == option.diameter && option.extruder_nozzle_stats.count(LeftExtruderIdx)
+    if (m_diameter_list[LeftExtruderIdx] == option.diameter_for_extruder(LeftExtruderIdx) && option.extruder_nozzle_stats.count(LeftExtruderIdx)
         && option.extruder_nozzle_stats.at(LeftExtruderIdx).count(m_volume_type_list[LeftExtruderIdx])
         && option.extruder_nozzle_stats.at(LeftExtruderIdx).at(m_volume_type_list[LeftExtruderIdx])>0)
         left_selected = false;
 
-    if (m_diameter_list[RightExtruderIdx] == option.diameter && option.extruder_nozzle_stats.count(RightExtruderIdx)
+    if (m_diameter_list[RightExtruderIdx] == option.diameter_for_extruder(RightExtruderIdx) && option.extruder_nozzle_stats.count(RightExtruderIdx)
         && option.extruder_nozzle_stats.at(RightExtruderIdx).count(m_volume_type_list[RightExtruderIdx])
         && option.extruder_nozzle_stats.at(RightExtruderIdx).at(m_volume_type_list[RightExtruderIdx])>0)
         right_selected = false;
@@ -444,12 +444,12 @@ void ExtruderBadge::MarkRelatedItems(const NozzleOption& option)
 {
     bool left_selected = false, right_selected = false;
 
-    if (m_diameter_list[LeftExtruderIdx] == option.diameter && option.extruder_nozzle_stats.count(LeftExtruderIdx)
+    if (m_diameter_list[LeftExtruderIdx] == option.diameter_for_extruder(LeftExtruderIdx) && option.extruder_nozzle_stats.count(LeftExtruderIdx)
         && option.extruder_nozzle_stats.at(LeftExtruderIdx).count(m_volume_type_list[LeftExtruderIdx])
         && option.extruder_nozzle_stats.at(LeftExtruderIdx).at(m_volume_type_list[LeftExtruderIdx]) > 0)
         left_selected = true;
 
-    if (m_diameter_list[RightExtruderIdx] == option.diameter && option.extruder_nozzle_stats.count(RightExtruderIdx)
+    if (m_diameter_list[RightExtruderIdx] == option.diameter_for_extruder(RightExtruderIdx) && option.extruder_nozzle_stats.count(RightExtruderIdx)
         && option.extruder_nozzle_stats.at(RightExtruderIdx).count(m_volume_type_list[RightExtruderIdx])
         && option.extruder_nozzle_stats.at(RightExtruderIdx).at(m_volume_type_list[RightExtruderIdx]) > 0)
         right_selected = true;
@@ -497,7 +497,7 @@ std::vector<int> HotEndTable::FilterHotEnds(const NozzleOption& option)
     for (auto& item : option.extruder_nozzle_stats) {
         for (auto& nozzle : item.second) {
             HotEndAttr info;
-            info.diameter = option.diameter;
+            info.diameter = option.diameter_for_extruder(item.first);
             info.extruder_id = item.first;
             info.volume_type = nozzle.first;
             nozzles_to_search.emplace_back(info);
@@ -858,7 +858,7 @@ Slic3r::GUI::MultiNozzleSyncDialog::MultiNozzleSyncDialog(wxWindow* parent,std::
     m_cancel_btn = new Button(this, _L("Cancel"), "", 0, 0, wxID_OK);
     m_confirm_btn = new Button(this, _L("Confirm"), "", 0, 0, wxID_CANCEL);
 
-    m_caution = new Label(this, _L("Caution: Mixing nozzle diameters in one print is not supported. If the selected size is only on one extruder, single-extruder printing will be enforced."));
+    m_caution = new Label(this, _L("The selected nozzle diameter for each extruder will be used for slicing. Assign each filament to an extruder with a compatible nozzle size."));
     m_caution->SetForegroundColour("#909090");
     main_sizer->Add(m_caution, 0, wxLEFT | wxRIGHT, FromDIP(25));
 
@@ -975,27 +975,41 @@ std::vector<NozzleOption> MultiNozzleSyncDialog::GetNozzleOptions(const std::vec
 {
     std::vector<NozzleOption> options;
 
-    std::set<std::string> diameters;
-    std::multimap<std::string, MultiNozzleUtils::NozzleGroupInfo> groups_mapped_for_diameter;
+    std::map<int, std::map<std::string, std::unordered_map<NozzleVolumeType, int>>> choices;
     for (auto& nozzle_group : nozzle_groups) {
-        groups_mapped_for_diameter.insert({ nozzle_group.diameter,nozzle_group });
+        choices[nozzle_group.extruder_id][nozzle_group.diameter][nozzle_group.volume_type] += nozzle_group.nozzle_count;
     }
 
 #if ENABLE_MIX_FLOW_PRINT
-    for (auto it = groups_mapped_for_diameter.begin(); it != groups_mapped_for_diameter.end(); ) {
-        NozzleOption option;
-        const auto& diameter = it->first;
-        auto range = groups_mapped_for_diameter.equal_range(diameter);
-
-        option.diameter = diameter;
-        for (auto val_it = range.first; val_it != range.second; ++val_it) {
-            const auto& elem = val_it->second;
-            option.extruder_nozzle_stats[elem.extruder_id][elem.volume_type] += elem.nozzle_count;
+    // Build the Cartesian product of one diameter choice per logical extruder. H2C normally
+    // produces a small list (one fixed-hotend choice x the Vortek rack diameters).
+    options.emplace_back();
+    for (const auto& [extruder_id, diameter_choices] : choices) {
+        std::vector<NozzleOption> expanded;
+        for (const NozzleOption& base : options) {
+            for (const auto& [diameter, stats] : diameter_choices) {
+                NozzleOption option = base;
+                option.extruder_diameters[extruder_id] = diameter;
+                option.extruder_nozzle_stats[extruder_id] = stats;
+                expanded.emplace_back(std::move(option));
+            }
         }
-        options.emplace_back(std::move(option));
-        it = range.second;
+        options = std::move(expanded);
+    }
+    for (NozzleOption& option : options) {
+        std::vector<std::pair<int, std::string>> sorted(option.extruder_diameters.begin(), option.extruder_diameters.end());
+        std::sort(sorted.begin(), sorted.end());
+        std::ostringstream label;
+        for (size_t idx = 0; idx < sorted.size(); ++idx) {
+            if (idx != 0) label << " / ";
+            label << sorted[idx].second;
+        }
+        option.diameter = label.str();
     }
 #else
+    std::multimap<std::string, MultiNozzleUtils::NozzleGroupInfo> groups_mapped_for_diameter;
+    for (auto& nozzle_group : nozzle_groups)
+        groups_mapped_for_diameter.insert({nozzle_group.diameter, nozzle_group});
     for (auto it = groups_mapped_for_diameter.begin(); it != groups_mapped_for_diameter.end(); ) {
         const auto& diameter = it->first;
         auto range = groups_mapped_for_diameter.equal_range(diameter);
@@ -1272,6 +1286,12 @@ std::optional<NozzleOption> tryPopUpMultiNozzleDialog(MachineObject* obj)
                     setExtruderNozzleCount(preset_bundle, extruder_id, volume_type, nozzle_count, clear_all);
                     clear_all = false;
                 }
+            }
+        }
+        if (auto *diameters = preset_bundle->printers.get_edited_preset().config.option<ConfigOptionFloats>("nozzle_diameter")) {
+            for (const auto& [extruder_id, diameter] : selected_option->extruder_diameters) {
+                if (extruder_id >= 0 && extruder_id < (int) diameters->values.size())
+                    diameters->values[extruder_id] = std::stod(diameter);
             }
         }
         // The stats now hold the device's per-type breakdown: protect it from being collapsed by a manual
