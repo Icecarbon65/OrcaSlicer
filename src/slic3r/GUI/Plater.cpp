@@ -16,6 +16,7 @@
 #include <vector>
 #include <string>
 #include <regex>
+#include <sstream>
 #include <future>
 #include <thread>
 #include <atomic>
@@ -1722,7 +1723,17 @@ static bool is_same_nozzle_config(const std::map<int, std::vector<DevNozzle>> &c
 
 static std::string serialize_nozzle_option(const NozzleOption& option) {
     std::ostringstream oss;
-    oss << option.diameter << "|";
+    if (option.extruder_diameters.empty()) {
+        oss << option.diameter;
+    } else {
+        bool first_diameter = true;
+        for (const auto& [extruder_id, diameter] : option.extruder_diameters) {
+            if (!first_diameter) oss << ",";
+            first_diameter = false;
+            oss << extruder_id << "=" << diameter;
+        }
+    }
+    oss << "|";
 
     bool first = true;
     for (const auto& pair : option.extruder_nozzle_stats) {
@@ -1749,6 +1760,26 @@ static std::optional<NozzleOption> deserialize_nozzle_option(const std::string& 
 
     NozzleOption option;
     option.diameter = parts[0];
+    if (parts[0].find('=') != std::string::npos) {
+        std::vector<std::string> diameter_parts;
+        boost::split(diameter_parts, parts[0], boost::is_any_of(","));
+        std::vector<std::pair<int, std::string>> sorted_diameters;
+        for (const std::string& diameter_part : diameter_parts) {
+            std::vector<std::string> kv;
+            boost::split(kv, diameter_part, boost::is_any_of("="));
+            if (kv.size() != 2) continue;
+            int extruder_id = std::stoi(kv[0]);
+            option.extruder_diameters[extruder_id] = kv[1];
+            sorted_diameters.emplace_back(extruder_id, kv[1]);
+        }
+        std::sort(sorted_diameters.begin(), sorted_diameters.end());
+        std::ostringstream label;
+        for (size_t idx = 0; idx < sorted_diameters.size(); ++idx) {
+            if (idx != 0) label << " / ";
+            label << sorted_diameters[idx].second;
+        }
+        option.diameter = label.str();
+    }
 
     std::vector<std::string> extruder_parts;
     boost::split(extruder_parts, parts[1], boost::is_any_of(";"));
@@ -1854,6 +1885,12 @@ std::optional<NozzleOption> Sidebar::priv::get_nozzle_options(MachineObject* obj
                             setExtruderNozzleCount(preset_bundle, extruder_id, volume_type, nozzle_count, clear_all);
                             clear_all = false;
                         }
+                    }
+                }
+                if (auto *diameters = preset_bundle->printers.get_edited_preset().config.option<ConfigOptionFloats>("nozzle_diameter")) {
+                    for (const auto& [extruder_id, diameter] : nozzle_option->extruder_diameters) {
+                        if (extruder_id >= 0 && extruder_id < (int) diameters->values.size())
+                            diameters->values[extruder_id] = std::stod(diameter);
                     }
                 }
                 // The stats now hold the device's per-type breakdown: protect it from being collapsed by
