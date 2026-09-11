@@ -27,6 +27,7 @@
 #include <wx/webview.h>
 
 #include <memory>
+#include <map>
 #include <optional>
 #include <unordered_map>
 #include <vector>
@@ -53,7 +54,7 @@ struct NozzleOption
     // The actual slicing diameter is per logical extruder: H2C may use (for example)
     // the fixed 0.4 mm hotend together with a 0.6 mm Vortek hotend in one print.
     std::string diameter;
-    std::unordered_map<int, std::string> extruder_diameters;
+    std::map<int, std::string> extruder_diameters;
     std::unordered_map<int, std::unordered_map<NozzleVolumeType, int>> extruder_nozzle_stats;
 
     std::string diameter_for_extruder(int extruder_id) const

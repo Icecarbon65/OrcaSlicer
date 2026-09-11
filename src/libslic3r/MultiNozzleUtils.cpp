@@ -178,10 +178,24 @@ std::optional<LayeredNozzleGroupResult> LayeredNozzleGroupResult::create(
     const std::vector<std::map<NozzleVolumeType, int>> &nozzle_count,
     float                                               diameter)
 {
+    return create(used_filaments, filament_map, filament_volume_map, filament_nozzle_map, nozzle_count,
+                  std::vector<double>(nozzle_count.size(), diameter));
+}
+
+std::optional<LayeredNozzleGroupResult> LayeredNozzleGroupResult::create(
+    const std::vector<unsigned int>&                    used_filaments,
+    const std::vector<int>&                             filament_map,
+    const std::vector<int>&                             filament_volume_map,
+    const std::vector<int>&                             filament_nozzle_map,
+    const std::vector<std::map<NozzleVolumeType, int>>& nozzle_count,
+    const std::vector<double>&                          diameters)
+{
     std::vector<NozzleGroupInfo> nozzle_groups;
     for (size_t extruder_id = 0; extruder_id < nozzle_count.size(); ++extruder_id) {
         for (auto elem : nozzle_count[extruder_id]) {
             NozzleGroupInfo group_info;
+            const double diameter   = extruder_id < diameters.size() ? diameters[extruder_id]
+                                                                      : (diameters.empty() ? 0.4 : diameters.front());
             group_info.diameter     = format_diameter_to_str(diameter);
             group_info.volume_type  = elem.first;
             group_info.nozzle_count = elem.second;

@@ -153,6 +153,14 @@ public:
         const std::vector<std::map<NozzleVolumeType, int>>& nozzle_count,
         float                                               diameter);
 
+    static std::optional<LayeredNozzleGroupResult> create(
+        const std::vector<unsigned int>&                    used_filaments,
+        const std::vector<int>&                             filament_map,
+        const std::vector<int>&                             filament_volume_map,
+        const std::vector<int>&                             filament_nozzle_map,
+        const std::vector<std::map<NozzleVolumeType, int>>& nozzle_count,
+        const std::vector<double>&                          diameters);
+
     bool are_filaments_same_extruder(int filament_id1, int filament_id2, int layer_id = -1) const;
     bool are_filaments_same_nozzle(int filament_id1, int filament_id2, int layer_id = -1) const;
     int get_extruder_count() const override;

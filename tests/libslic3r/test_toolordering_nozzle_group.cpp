@@ -385,6 +385,27 @@ TEST_CASE("Hybrid nozzle stats resolve to concrete volume types", "[ToolOrdering
     REQUIRE_FALSE(LayeredNozzleGroupResult::create(used_filaments, filament_map, hybrid_requests, nozzle_requests, stats, 0.4f).has_value());
 }
 
+TEST_CASE("Manual H2C nozzle mapping preserves each extruder diameter", "[ToolOrdering][H2C][Regression]")
+{
+    auto stats = get_extruder_nozzle_stats({"Standard#1", "Standard#1"});
+
+    const std::vector<unsigned int> used_filaments = {0, 1};
+    const std::vector<int>          filament_map    = {0, 1};
+    const std::vector<int>          volume_requests = {(int) nvtStandard, (int) nvtStandard};
+    const std::vector<int>          nozzle_requests = {0, 1};
+    const std::vector<double>       diameters       = {0.4, 0.6};
+
+    auto group = LayeredNozzleGroupResult::create(used_filaments, filament_map, volume_requests, nozzle_requests, stats, diameters);
+    REQUIRE(group.has_value());
+
+    auto left_nozzle  = group->get_nozzle_for_filament(0);
+    auto right_nozzle = group->get_nozzle_for_filament(1);
+    REQUIRE(left_nozzle.has_value());
+    REQUIRE(right_nozzle.has_value());
+    REQUIRE(left_nozzle->diameter == "0.4");
+    REQUIRE(right_nozzle->diameter == "0.6");
+}
+
 TEST_CASE("update_used_filament_values merges only used filaments", "[ToolOrdering][H2C]")
 {
     // The config write-back merges the engine's per-filament values over the config baseline:
