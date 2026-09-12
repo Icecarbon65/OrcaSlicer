@@ -420,6 +420,20 @@ jobs:
         # the checkout cpack re-installs from when it builds the NSIS installer.
         run: scripts\build_preset_cache.bat --prune-source "%BUILD_DIR%" "resources\profiles" "%BUILD_DIR%\OrcaSlicer\resources\profiles"
 
+      - name: Validate Windows package architecture
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: .\scripts\validate_windows_package.ps1 -Root "${{ env.BUILD_DIR }}/OrcaSlicer" -Architecture "${{ inputs.arch }}"
+
+      - name: Smoke test Windows executable
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          & "${{ env.BUILD_DIR }}/OrcaSlicer/orca-slicer.exe" --help
+          if ($LASTEXITCODE -ne 0) {
+            throw "orca-slicer.exe failed its startup smoke test (exit $LASTEXITCODE)"
+          }
+
       - name: Pack unit tests Win
         if: runner.os == 'Windows'
         working-directory: ${{ github.workspace }}
@@ -443,6 +457,15 @@ jobs:
         working-directory: ${{ github.workspace }}/${{ env.BUILD_DIR }}
         run: |
           cpack -G NSIS
+
+      - name: Validate NSIS installer payload
+        if: runner.os == 'Windows' && !vars.SELF_HOSTED
+        shell: pwsh
+        run: |
+          $installer = Get-Item "${{ env.BUILD_DIR }}/OrcaSlicer_Windows_Installer_*${{ env.ARCH_SUFFIX }}.exe"
+          .\scripts\validate_windows_package.ps1 -Root "${{ env.BUILD_DIR }}/OrcaSlicer" -Architecture "${{ inputs.arch }}" -InstallerPath $installer.FullName
+          $hash = (Get-FileHash $installer.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $($installer.Name)" | Set-Content "$($installer.FullName).sha256" -Encoding ascii
 
       - name: Pack app
         if: runner.os == 'Windows'
@@ -468,7 +491,9 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: OrcaSlicer_Windows_${{ env.ver }}${{ env.ARCH_SUFFIX }}
-          path: ${{ github.workspace }}/${{ env.BUILD_DIR }}/OrcaSlicer*.exe
+          path: |
+            ${{ github.workspace }}/${{ env.BUILD_DIR }}/OrcaSlicer*.exe
+            ${{ github.workspace }}/${{ env.BUILD_DIR }}/OrcaSlicer*.exe.sha256
 
       - name: Upload artifacts Win PDB
         if: runner.os == 'Windows' && inputs.arch != 'arm64' && !vars.SELF_HOSTED

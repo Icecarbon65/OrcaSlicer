@@ -3,6 +3,8 @@ set(_conf_cmd ./configure)
 if (MSVC)
     set(_source_dir "${CMAKE_BINARY_DIR}/dep_FFMPEG-prefix/src/dep_FFMPEG")
 
+    # Keep Windows FFmpeg inputs content-addressed. Changing either hash also
+    # rotates the dependency cache key used by the Windows packaging workflow.
     set(PREBUILD_URL_arm64 "https://github.com/Noisyfox/FFmpeg-Builds-Orca/releases/download/autobuild-2026-07-17-14-28/ffmpeg-n7.0.3-31-g9b6ffd74b5-winarm64-orca-shared-7.0.zip")
     set(PREBUILD_HASH_arm64 "12f4140279f2f8469885e1b5b2e8be9d788882914c21523cacd56989f3548054")
     set(PREBUILD_URL_x64 "https://github.com/Noisyfox/FFmpeg-Builds-Orca/releases/download/autobuild-2026-07-17-14-28/ffmpeg-n7.0.3-31-g9b6ffd74b5-win64-orca-shared-7.0.zip")
