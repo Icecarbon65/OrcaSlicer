@@ -12,6 +12,40 @@ param(
 $ErrorActionPreference = 'Stop'
 $expectedMachine = if ($Architecture -eq 'arm64') { 0xAA64 } else { 0x8664 }
 
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+
+public static class OrcaWindowsDllLoader {
+    [DllImport("kernel32.dll", EntryPoint = "LoadLibraryExW", CharSet = CharSet.Unicode, SetLastError = true)]
+    public static extern IntPtr LoadLibraryEx(string path, IntPtr reserved, uint flags);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool FreeLibrary(IntPtr module);
+}
+'@
+
+function Assert-DllLoads([string] $Path) {
+    # Search the DLL's directory for its dependencies, just as the installed
+    # application does. A PE header check alone cannot detect a bad DLL image.
+    $loadLibrarySearchDllLoadDir = 0x100
+    $loadLibrarySearchDefaultDirs = 0x1000
+    $module = [OrcaWindowsDllLoader]::LoadLibraryEx(
+        $Path, [IntPtr]::Zero, [uint32]($loadLibrarySearchDllLoadDir -bor $loadLibrarySearchDefaultDirs)
+    )
+    if ($module -eq [IntPtr]::Zero) {
+        $errorCode = [Runtime.InteropServices.Marshal]::GetLastWin32Error()
+        $message = [System.ComponentModel.Win32Exception]::new($errorCode).Message
+        throw "Windows could not load '$Path': $message (Win32 error $errorCode)"
+    }
+    try {
+        Write-Host "Windows successfully loaded '$Path'"
+    } finally {
+        [void][OrcaWindowsDllLoader]::FreeLibrary($module)
+    }
+}
+
 function Get-PeMachine([string] $Path) {
     $stream = [System.IO.File]::OpenRead($Path)
     try {
@@ -64,6 +98,7 @@ foreach ($required in $requiredFiles) {
 }
 
 Write-Host "Validated $($binaries.Count) $Architecture Windows binaries in $resolvedRoot"
+Assert-DllLoads (@($binaries | Where-Object { $_.Name -eq 'swscale-8.dll' })[0].FullName)
 
 if ($InstallerPath) {
     $resolvedInstaller = (Resolve-Path $InstallerPath).Path
