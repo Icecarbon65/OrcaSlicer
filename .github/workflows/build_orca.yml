@@ -420,19 +420,10 @@ jobs:
         # the checkout cpack re-installs from when it builds the NSIS installer.
         run: scripts\build_preset_cache.bat --prune-source "%BUILD_DIR%" "resources\profiles" "%BUILD_DIR%\OrcaSlicer\resources\profiles"
 
-      - name: Validate Windows package architecture
+      - name: Validate Windows package architecture and FFmpeg DLL loading
         if: runner.os == 'Windows'
         shell: pwsh
         run: .\scripts\validate_windows_package.ps1 -Root "${{ env.BUILD_DIR }}/OrcaSlicer" -Architecture "${{ inputs.arch }}"
-
-      - name: Smoke test Windows executable
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          & "${{ env.BUILD_DIR }}/OrcaSlicer/orca-slicer.exe" --help
-          if ($LASTEXITCODE -ne 0) {
-            throw "orca-slicer.exe failed its startup smoke test (exit $LASTEXITCODE)"
-          }
 
       - name: Pack unit tests Win
         if: runner.os == 'Windows'
