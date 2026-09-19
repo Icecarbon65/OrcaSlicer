@@ -8797,7 +8797,17 @@ void GUI_App::load_current_presets(bool active_preset_combox/*= false*/, bool ch
                 preset_bundle->set_num_filaments(target);
         }
     }
-	this->plater()->set_printer_technology(printer_technology);
+	    // The AD5X has one nozzle fed by a four-slot IFS. Keep four project filament
+    // selectors available when its system preset is chosen so every loaded spool
+    // can be assigned before slicing and mapped to the matching IFS slot at upload.
+    // Do not shrink larger projects; imported plates may intentionally retain
+    // additional material definitions even though only four can be loaded at once.
+    if (printer_technology == ptFFF && edited_printer_preset.config.opt_bool("single_extruder_multi_material") &&
+        edited_printer_preset.config.opt_string("printer_model") == "Flashforge AD5X" &&
+        preset_bundle->filament_presets.size() < 4) {
+        preset_bundle->set_num_filaments(4);
+    }
+this->plater()->set_printer_technology(printer_technology);
     for (Tab *tab : tabs_list)
 		if (tab->supports_printer_technology(printer_technology)) {
 			if (tab->type() == Preset::TYPE_PRINTER) {
