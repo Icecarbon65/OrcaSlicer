@@ -43,6 +43,35 @@ if(NOT _layout_result EQUAL 0)
     message(FATAL_ERROR "CPython Windows layout staging failed with exit code ${_layout_result}")
 endif()
 
+# CPython's layout helper copies vcruntime*.dll from its build directory.  On
+# native ARM64 runners that directory can contain host-x64 runtime DLLs left by
+# build-time tools, even though python.exe and python312.dll are ARM64.  Shipping
+# either DLL makes Windows reject the embedded interpreter with 0xc0000020.
+# Replace them with the redistributables selected by the active ARM64 toolchain.
+if(PYTHON_LAYOUT_ARCH STREQUAL "arm64")
+    file(TO_CMAKE_PATH "$ENV{VCToolsRedistDir}" _vc_redist_root)
+    if(NOT _vc_redist_root OR NOT IS_DIRECTORY "${_vc_redist_root}/arm64")
+        message(FATAL_ERROR
+            "VCToolsRedistDir does not contain the ARM64 redistributables: "
+            "'$ENV{VCToolsRedistDir}'")
+    endif()
+
+    file(GLOB _arm64_vcruntime_dlls
+        "${_vc_redist_root}/arm64/Microsoft.VC*.CRT/vcruntime*.dll")
+    list(FILTER _arm64_vcruntime_dlls EXCLUDE REGEX "_threads\\.dll$")
+    if(NOT _arm64_vcruntime_dlls)
+        message(FATAL_ERROR
+            "No ARM64 vcruntime DLLs found under '${_vc_redist_root}/arm64'")
+    endif()
+
+    file(GLOB _staged_vcruntime_dlls "${PYTHON_DEST_DIR}/vcruntime*.dll")
+    if(_staged_vcruntime_dlls)
+        file(REMOVE ${_staged_vcruntime_dlls})
+    endif()
+    file(COPY ${_arm64_vcruntime_dlls} DESTINATION "${PYTHON_DEST_DIR}")
+    message(STATUS "Staged ARM64 VC runtime DLLs: ${_arm64_vcruntime_dlls}")
+endif()
+
 set(_required_files
     "${PYTHON_DEST_DIR}/Lib/encodings/__init__.py"
     "${PYTHON_DEST_DIR}/include/Python.h"
